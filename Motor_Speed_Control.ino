@@ -1,5 +1,5 @@
 // define IO pin
-#include <HCSR04.h>
+#include "SR04.h"
 #define PWMA  5    // Controls power to right motor
 #define PWMB  6    // Controls power to left motor
 #define AIN   7    // Controls direction of right motor, HIGH = FORWARD, LOW = REVERSE
@@ -8,7 +8,8 @@
 #define STBY  3    // Place H-Bridge in standby if LOW, Run if HIGH
 #define TRIG_PIN 13
 #define ECHO_PIN 12
-byte echoCount = 1;
+
+SR04 sr04 = SR04(ECHO_PIN,TRIG_PIN);
 bool emergencyStop;
 
 struct program *example_program;
@@ -29,21 +30,28 @@ struct program {
 
 struct program* fetch_intervals() {
 
- //add retrieval code from bluetooth here,
-
  //creating new prog
  struct program* example_program = new program;
 
- example_program->num_intervals = 6;
+
+//add retrieval code from bluetooth here
+ example_program->num_intervals = 6; //would be retreived from bluetooth connection
  example_program->program = new interval[example_program->num_intervals];
+
+ double percent_speed = 0.0; //will store percentage of max speed that robot should travel at
 
  for (int i = 0; i < example_program->num_intervals; i++) {
 
-   // this for loop will be replaced with the bluetooth-transmitted info populating the array
-   example_program->program[i].index = i; // current index
-   example_program->program[i].int_distance = random(200, 500);
-   example_program->program[i].duration = 2; // duration in seconds, i is placeholder, will take from bluetooth information
-   example_program->program[i].int_speed = example_program->program[i].int_distance / example_program->program[i].duration; //speed of program, will take from bluetooth information
+   // this part of the for loop will be replaced with the bluetooth-transmitted info populating the array
+   example_program->program[i].index = i; // index from bluetooth transmission
+   example_program->program[i].duration = random(1, 10); // duration in seconds, placeholder will take from bluetooth information
+   example_program->program[i].int_distance = random(3, 12) * example_program->program[i].duration; //in meters, bluetooth transmission
+   //range of 3-12 meters per second since top speed is 12m/s
+
+   percent_speed = (double)(example_program->program[i].int_distance/example_program->program[i].duration)/12.0;
+   //this is finding what percent of the max speed robot should be going at
+
+   example_program->program[i].int_speed = (int)(percent_speed * 255); //255 is max speed
 
  }
 
@@ -66,7 +74,6 @@ void setup() {
   analogWrite(PWMB, 0);  // Fully off for Left
   digitalWrite(STBY, HIGH);  //Enable Motors to run
 
-HCSR04.begin(TRIG_PIN, ECHO_PIN, echoCount);
  example_program = fetch_intervals(); // fetch info from bluetooth
 }
 
@@ -89,16 +96,19 @@ void loop() {
  for (int i = 0; i <  example_program->num_intervals; i++) {
    analogWrite(PWMA, example_program->program[i].int_speed); //write speed to left
    analogWrite(PWMB, example_program->program[i].int_speed); //write speed to right
-   for (int j = 0; j < example_program->program[i].duration * 1000; j++) {
-      if (HCSR04.measureDistanceMm() < 10.0) {
+
+   for (int j = 0; j < example_program->program[i].duration * 22; j++) { //22 cycles ~ 1 second
+      if (sr04.Distance() < 30) { //one foot away
         emergencyStop = true;
         break;
       }
       delay(1); // delay for duration of interval
    }
+
    if (emergencyStop == true) {
-        break;
-      }
+      break;
+    }
+
  }
 
   analogWrite(PWMA, 0);   // no power on right
